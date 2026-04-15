@@ -94,18 +94,16 @@
     // XR handling
     // ----------------------------------------------------------------
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
+    const buffGeo = new THREE.BufferGeometry();
+    buffGeo.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
 
     const controller1 = renderer.xr.getController( 0 );
-    controller1.add( new THREE.Line( geometry ) );
+    controller1.add( new THREE.Line( buffGeo ) );
     scene.add( controller1 );
 
     const controller2 = renderer.xr.getController( 1 );
-    controller2.add( new THREE.Line( geometry ) );
+    controller2.add( new THREE.Line( buffGeo ) );
     scene.add( controller2 );
-
-    // //
 
     const controllerModelFactory = new XRControllerModelFactory();
 
@@ -136,6 +134,7 @@
         // torus.geometry = new THREE.TorusKnotGeometry( ...Object.values( parameters ) );
     }
 
+    // 2D GUI setup
     const gui = new GUI( { width: 300 } );
     gui.add( parameters, 'radius', 0.0, 1.0 ).onChange( onChange );
     gui.add( parameters, 'tube', 0.0, 1.0 ).onChange( onChange );
@@ -144,10 +143,17 @@
     gui.add( parameters, 'p', 1, 10, 1 ).onChange( onChange );
     gui.add( parameters, 'q', 0, 10, 1 ).onChange( onChange );
     
+    // 3D GUI setup
     const guiMesh = new HTMLMesh( gui.domElement );
     guiMesh.position.set(0,3,4.2);
     guiMesh.rotation.set(-PI/4, 0, 0);
     guiMesh.scale.setScalar( 2 );
+    
+    // VR interactive group
+    const group = new InteractiveGroup();
+    group.listenToXRControllerEvents( controller1 );
+    group.listenToXRControllerEvents( controller2 );
+    scene.add( group );
 
     // Disable orbit controls in VR, enable in normal mode
     renderer.xr.addEventListener( 'sessionstart', () => {
@@ -163,10 +169,6 @@
         group.remove(guiMesh)
     });
 
-    const group = new InteractiveGroup();
-    group.listenToXRControllerEvents( controller1 );
-    group.listenToXRControllerEvents( controller2 );
-    scene.add( group );
 
     // Setup the grid and axes
     // ----------------------------------------------------------------
