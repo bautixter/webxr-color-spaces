@@ -185,30 +185,8 @@
     // Setup the grid and axes
     // ----------------------------------------------------------------
 
-    //  Create grid
-    const gridSize = 3
-    const halfGridSize = gridSize / 2
-    const gridHelper = new THREE.GridHelper( 3, 10, 0x888888, 0x888888 );
-    gridHelper.position.set(0,-1,0);
-    scene.add( gridHelper );
-
-    //  Add axes to the grid
-    function addArrow(dir, color){
-        dir.normalize();
-        const origin = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
-        const length = gridSize * 1.1;
-        const hex = 0xffff00;
-        const arrowLength = length * 0.1;
-        const arrowWidth = arrowLength * 0.4;
-        const arrowHelper = new THREE.ArrowHelper( dir, origin, length, color, arrowLength, arrowWidth );
-        gridHelper.add(arrowHelper);
-    }
-    
-    const rgbDef = colorModeDefs[ColorMode.RGB];
-    addArrow(new THREE.Vector3( 1, 0, 0), rgbDef.colors[0]);
-    addArrow(new THREE.Vector3( 0, 1, 0), rgbDef.colors[1]);
-    addArrow(new THREE.Vector3( 0, 0, 1), rgbDef.colors[2]);
-
+    let gridHelper = null;
+    let arrows = [];
 
     function makeAxisLabel(text, colorHex) {
         const canvas = document.createElement('canvas');
@@ -225,18 +203,12 @@
         return { sprite, canvas, ctx, tex };
     }
 
-    const tipDist = gridSize * 1.1 + 0.3;
-    const o = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
-
+    const rgbDef = colorModeDefs[ColorMode.RGB];
     const axisSprites = [
-        makeAxisLabel(rgbDef.labels[0], hexToCSS(rgbDef.colors[0])),  // X axis
-        makeAxisLabel(rgbDef.labels[1], hexToCSS(rgbDef.colors[1])),  // Y axis
-        makeAxisLabel(rgbDef.labels[2], hexToCSS(rgbDef.colors[2])),  // Z axis
+        makeAxisLabel(rgbDef.labels[0], hexToCSS(rgbDef.colors[0])),
+        makeAxisLabel(rgbDef.labels[1], hexToCSS(rgbDef.colors[1])),
+        makeAxisLabel(rgbDef.labels[2], hexToCSS(rgbDef.colors[2])),
     ];
-    axisSprites[0].sprite.position.set(o.x + tipDist, o.y,          o.z         );
-    axisSprites[1].sprite.position.set(o.x,           o.y + tipDist, o.z         );
-    axisSprites[2].sprite.position.set(o.x,           o.y,           o.z + tipDist);
-    axisSprites.forEach(l => gridHelper.add(l.sprite));
 
     function updateAxisLabels(mode) {
         const def = colorModeDefs[mode];
@@ -251,17 +223,83 @@
         });
     }
 
-    //  Add cube
-    const boxGeom = new THREE.BoxGeometry( gridSize, gridSize, gridSize );
-    const material = new THREE.MeshBasicMaterial( {
+    //  Add cube (no geometry size or parent yet — applyLayout handles both)
+    const cubeMat = new THREE.MeshBasicMaterial({
         color: 0x555555,
         side: THREE.BackSide,
         transparent: true,
         opacity: 0.2
-    } );
-    const cube = new THREE.Mesh( boxGeom, material );
-    cube.position.set(0,halfGridSize,0);
-    gridHelper.add( cube );
+    });
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), cubeMat);
+
+    // Rebuilds the grid, arrows, cube and particle placement for a given mode def.
+    // Must be called after `particles` is defined.
+    function applyLayout(def) {
+        const useNeg = def.useNegative;
+        const size   = useNeg ? 6 : 3;
+        const half   = size / 2;          // 3 for Lab, 1.5 otherwise
+        const divs   = useNeg ? 20 : 10;
+
+        // Replace grid helper
+        if (gridHelper) scene.remove(gridHelper);
+        gridHelper = new THREE.GridHelper(size, divs, 0x888888, 0x888888);
+        gridHelper.position.set(0, -1, 0);
+        scene.add(gridHelper);
+
+        // Cube: scale uniformly by 2 for Lab → 6×6×6, sitting on the floor
+        cube.scale.setScalar(useNeg ? 2 : 1);
+        cube.position.set(0, half, 0);
+        gridHelper.add(cube);
+
+        // Particles: center at grid origin when negative axes are present
+        const pOff = useNeg ? 0 : -half;
+        particles.position.set(pOff, 0.001, pOff);
+        gridHelper.add(particles);
+
+        // Arrows & sprite labels
+        arrows = [];
+        const axLen   = (useNeg ? half : size) * 1.1;
+        const headLen = axLen * 0.1;
+        const headW   = headLen * 0.4;
+        const tipDist = axLen + 0.3;
+
+        const posDirs = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(0, 0, 1),
+        ];
+
+        if (useNeg) {
+            // Axes centered at grid origin; add both positive and negative arrows
+            const center = new THREE.Vector3(0, 0.001, 0);
+            posDirs.forEach((dir, i) => {
+                const pos = new THREE.ArrowHelper(dir,                   center, axLen, def.colors[i], headLen, headW);
+                const neg = new THREE.ArrowHelper(dir.clone().negate(),  center, axLen, def.colors[i], headLen, headW);
+                gridHelper.add(pos);
+                gridHelper.add(neg);
+                arrows.push(pos, neg);
+            });
+
+            // Labels at tips of positive arrows only
+            axisSprites[0].sprite.position.set(tipDist, 0.001,    0       );
+            axisSprites[1].sprite.position.set(0,        tipDist,  0       );
+            axisSprites[2].sprite.position.set(0,        0.001,    tipDist );
+        } else {
+            // Axes from the grid corner
+            const origin = new THREE.Vector3(-half, 0.001, -half);
+            posDirs.forEach((dir, i) => {
+                const a = new THREE.ArrowHelper(dir, origin, axLen, def.colors[i], headLen, headW);
+                gridHelper.add(a);
+                arrows.push(a);
+            });
+
+            axisSprites[0].sprite.position.set(origin.x + tipDist, origin.y,             origin.z           );
+            axisSprites[1].sprite.position.set(origin.x,            origin.y + tipDist,   origin.z           );
+            axisSprites[2].sprite.position.set(origin.x,            origin.y,             origin.z + tipDist );
+        }
+
+        axisSprites.forEach(s => gridHelper.add(s.sprite));
+    }
 
     // Load texture and make point cloud
     // ----------------------------------------------------------------
@@ -341,8 +379,8 @@
 
     const particles = new THREE.Points(pointsBuffer, pointMat);
     particles.frustumCulled = false;
-    gridHelper.add( particles );
-    particles.position.set(-halfGridSize, 0.001, -halfGridSize);
+
+    applyLayout(colorModeDefs[PARAMS.colorMode]);
 
 
     // GUI setup
@@ -354,6 +392,7 @@
         const def = colorModeDefs[PARAMS.colorMode];
         pointMat.uniforms.uColorMode.value = PARAMS.colorMode;
         pointMat.uniforms.uAxisOrder.value.set(...def.order);
+        applyLayout(def);
         updateAxisLabels(PARAMS.colorMode);
     });
     gui.add( PARAMS, 'pointOpacity', 0.0, 1.0 ).onChange( () => {
