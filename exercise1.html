@@ -273,8 +273,13 @@
         scene.add(gridHelper);
 
         // Cube: scale uniformly by 2 for Lab → 6×6×6, sitting on the floor
-        cube.scale.setScalar(useNeg ? 2 : 1);
-        cube.position.set(0, half, 0);
+        if (useNeg){
+            cube.scale.set(2,1,2);
+            cube.position.set(0, half/2, 0);
+        } else {
+            cube.scale.set(1,1,1);
+            cube.position.set(0, half, 0);
+        };
         gridHelper.add(cube);
 
         // Particles: center at grid origin when negative axes are present
@@ -299,11 +304,14 @@
             // Axes centered at grid origin; add both positive and negative arrows
             const center = new THREE.Vector3(0, 0.001, 0);
             posDirs.forEach((dir, i) => {
-                const pos = new THREE.ArrowHelper(dir,                   center, axLen, def.colors[i], headLen, headW);
-                const neg = new THREE.ArrowHelper(dir.clone().negate(),  center, axLen, def.colors[i], headLen, headW);
+                const pos = new THREE.ArrowHelper(dir, center, axLen, def.colors[i], headLen, headW);
                 gridHelper.add(pos);
-                gridHelper.add(neg);
-                arrows.push(pos, neg);
+                arrows.push(pos);
+                if (i !== 1) {  // L* (Y, i=1) has no negative direction
+                    const neg = new THREE.ArrowHelper(dir.clone().negate(), center, axLen, def.colors[i], headLen, headW);
+                    gridHelper.add(neg);
+                    arrows.push(neg);
+                }
             });
 
             // Labels at tips of positive arrows only
@@ -361,7 +369,7 @@
             for (let i = 1; i <= TICKS; i++) {
                 const t   = i / TICKS;
                 const lbl = makeLabel((min + t * (max - min)).toFixed(dec));
-                lbl.position.set(-half - 0.3, t * size, -half);
+                lbl.position.set(-half - 0.3, t * (useNeg ? half : size), -half);
                 gridHelper.add(lbl);
                 gridLabels.push(lbl);
             }

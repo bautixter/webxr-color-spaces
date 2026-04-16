@@ -101,9 +101,9 @@ export const colorSpaceFunctions = `
             case 3: return XYZ_to_xyY(linRGB_to_XYZ(srgb_to_linRGB(c)));
             case 4:
                 v = XYZ_to_Lab(linRGB_to_XYZ(srgb_to_linRGB(c)));
-                return vec3(v.x / 50.0 - 1.0,  // L*  → [-1,1]
-                            v.y / 128.0,    // a*  → [-1,1]
-                            v.z / 128.0);   // b*  → [-1,1]
+                return vec3(v.x / 100.0,   // L*  → [0,1]
+                            v.y / 128.0,   // a*  → [-1,1]
+                            v.z / 128.0);  // b*  → [-1,1]
             case 5:
                 v = Lab_to_LCh(XYZ_to_Lab(linRGB_to_XYZ(srgb_to_linRGB(c))));
                 return vec3(v.x / 100.0,
