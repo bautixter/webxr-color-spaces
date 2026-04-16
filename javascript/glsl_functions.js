@@ -95,7 +95,9 @@ export const colorSpaceFunctions = `
         vec3 v;
         switch (mode) {
             case 1: return srgb_to_hsv(c);
-            case 2: return linRGB_to_XYZ(srgb_to_linRGB(c));
+            case 2:
+                v = linRGB_to_XYZ(srgb_to_linRGB(c));
+                return vec3(v.x / 0.95047, v.y / 1.00000, v.z / 1.08883); // normalize by D65 white
             case 3: return XYZ_to_xyY(linRGB_to_XYZ(srgb_to_linRGB(c)));
             case 4:
                 v = XYZ_to_Lab(linRGB_to_XYZ(srgb_to_linRGB(c)));
