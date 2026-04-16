@@ -49,35 +49,53 @@
     import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
     import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-    import Stats from 'three/addons/libs/stats.module.js';
-    
+    import { colorSpaceFunctions } from './javascript/glsl_functions.js'
+
+    // Variable and constants definition
+    // ----------------------------------------------------------------
+
     const PI = 3.14159265359;
+
+    const ColorMode = Object.freeze({
+        RGB  : 0,
+        HSV  : 1,
+        XYZ  : 2,
+        xyY  : 3,
+        Lab  : 4,
+        LCh  : 5,
+    });
+
+    const PARAMS = {
+        colorMode : ColorMode.RGB,
+        pointOpacity : 1.0,
+        pointSize : 5.0
+    };
 
     // Scene setup
     // ----------------------------------------------------------------
 
-    // ☆ Initialize the scene
+    // Initialize the scene
     const scene = new THREE.Scene();
     
-    // ☆ Create a WebGLRenderer and enable shadow maps
+    // Create a WebGLRenderer and enable shadow maps
     const canvas = document.querySelector('#c');
     const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
     renderer.shadowMap.enabled = true;
 
-    // ☆ VR init
+    // VR init
     renderer.xr.enabled = true;
     document.body.appendChild( VRButton.createButton( renderer ) );
 
-    // ☆ Create a perspective camera
+    // Create a perspective camera
     const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
     camera.position.z = 5;
     camera.position.y = 5;
 
-    // ☆ Orbit controls
+    // Orbit controls
     var controls = new OrbitControls(camera, renderer.domElement);
     controls.listenToKeyEvents(window);
 
-    // ☆ Let's also set up the scene with some lights
+    // Let's also set up the scene with some lights
     scene.background = new THREE.Color( 0x333333 );
     {
         const point1 = new THREE.PointLight(0xFFFFFF, 8);
@@ -115,33 +133,190 @@
     controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
     scene.add( controllerGrip2 );
 
-    // Variables and GUI
+    // Setup the grid and axes
     // ----------------------------------------------------------------
 
-    // ☆ Parameter definition (all variables that can be modified through GUI)
-    const parameters = {
-        radius: 0.6,
-        tube: 0.2,
-        tubularSegments: 150,
-        radialSegments: 20,
-        p: 2,
-        q: 3,
-        thickness: 0.5
+    //  Create grid
+    const gridSize = 3
+    const halfGridSize = gridSize / 2
+    const gridHelper = new THREE.GridHelper( 3, 10, 0x888888, 0x888888 );
+    gridHelper.position.set(0,-1,0);
+    scene.add( gridHelper );
+
+    //  Add axes to the grid
+    function addArrow(dir, color){
+        dir.normalize();
+        const origin = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
+        const length = gridSize * 1.1;
+        const hex = 0xffff00;
+        const arrowLength = length * 0.1;
+        const arrowWidth = arrowLength * 0.4;
+        const arrowHelper = new THREE.ArrowHelper( dir, origin, length, color, arrowLength, arrowWidth );
+        gridHelper.add(arrowHelper);
+    }
+    
+    addArrow(new THREE.Vector3( 1, 0, 0), 0xFF0000);
+    addArrow(new THREE.Vector3( 0, 1, 0), 0x00FF00);
+    addArrow(new THREE.Vector3( 0, 0, 1), 0x0000FF);
+
+    //  Axis labels
+    const axisLabelDefs = {
+        [ColorMode.RGB]: ['R', 'G', 'B'],
+        [ColorMode.HSV]: ['H', 'S', 'V'],
+        [ColorMode.XYZ]: ['X', 'Y', 'Z'],
+        [ColorMode.xyY]: ['x', 'y', 'Y'],
+        [ColorMode.Lab]: ['L*', 'a*', 'b*'],
+        [ColorMode.LCh]: ['L*', 'C*', 'h'],
     };
 
-    function onChange() {
-        // torus.geometry.dispose();
-        // torus.geometry = new THREE.TorusKnotGeometry( ...Object.values( parameters ) );
+    // X=red(0xFF0000), Y=blue(0x0000FF), Z=green(0xFF0000)
+    const axisColors = ['#0xFF0000', '#0x0000FF', '#0xFF0000'];
+
+    function makeAxisLabel(text, colorHex) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = 'bold 44px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = colorHex;
+        ctx.fillText(text, 64, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+        sprite.scale.set(0.5, 0.25, 1);
+        return { sprite, canvas, ctx, tex };
     }
+
+    const tipDist = gridSize * 1.1 + 0.3;
+    const o = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
+
+    const axisSprites = [
+        makeAxisLabel('R', axisColors[0]),  // X axis (green arrow)
+        makeAxisLabel('G', axisColors[1]),  // Y axis (blue arrow)
+        makeAxisLabel('B', axisColors[2]),  // Z axis (red arrow)
+    ];
+    axisSprites[0].sprite.position.set(o.x + tipDist, o.y,          o.z         );
+    axisSprites[1].sprite.position.set(o.x,           o.y + tipDist, o.z         );
+    axisSprites[2].sprite.position.set(o.x,           o.y,           o.z + tipDist);
+    axisSprites.forEach(l => gridHelper.add(l.sprite));
+
+    function updateAxisLabels(mode) {
+        const names = axisLabelDefs[mode];
+        axisSprites.forEach((lbl, i) => {
+            lbl.ctx.clearRect(0, 0, lbl.canvas.width, lbl.canvas.height);
+            lbl.ctx.fillStyle = axisColors[i];
+            lbl.ctx.font = 'bold 44px monospace';
+            lbl.ctx.textAlign = 'center';
+            lbl.ctx.textBaseline = 'middle';
+            lbl.ctx.fillText(names[i], 64, 32);
+            lbl.tex.needsUpdate = true;
+        });
+    }
+
+    //  Add cube
+    const boxGeom = new THREE.BoxGeometry( gridSize, gridSize, gridSize );
+    const material = new THREE.MeshBasicMaterial( {
+        color: 0x555555,
+        side: THREE.BackSide,
+        transparent: true,
+        opacity: 0.2
+    } );
+    const cube = new THREE.Mesh( boxGeom, material );
+    cube.position.set(0,halfGridSize,0);
+    gridHelper.add( cube );
+
+    // Load texture and make point cloud
+    // ----------------------------------------------------------------
+
+    // Load texture
+    const texLoader = new THREE.TextureLoader();
+    const texture = await texLoader.loadAsync('textures/joensuu.jpg');
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+
+    // Attribute handling
+    const pos = new Float32Array(texture.width * texture.height * 3);
+    const uvs = new Float32Array(texture.width * texture.height * 2);
+    
+    let count = 0;
+    for(let x = 0; x < texture.width; x++){
+        for(let y = 0; y < texture.height; y++){
+            uvs[count++] = (x + 0.5) / texture.width;
+            uvs[count++] = (y + 0.5) / texture.height;
+        }
+    }
+    
+    const pointsBuffer = new THREE.BufferGeometry();
+    pointsBuffer.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    pointsBuffer.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+
+    // Points material definition
+    const pointMat = new THREE.ShaderMaterial({
+        transparent: true,
+        uniforms: {
+          uTex: { value: texture },
+          uOpacity: { value: PARAMS.pointOpacity },
+          uPointSize: { value: PARAMS.pointSize },
+          uColorMode: { value: PARAMS.colorMode }
+        },
+
+        vertexShader: colorSpaceFunctions + `
+
+            uniform sampler2D uTex;
+            uniform float     uOpacity;
+            uniform float     uPointSize;
+            uniform int       uColorMode;
+
+            varying vec4 vColor;
+
+            void main() {
+                vec3 texturePoint = texture2D ( uTex, uv ).rgb;
+                vec3 newColor = color_to_mode(texturePoint, uColorMode);
+                vColor = vec4(texturePoint, uOpacity);
+
+                // Use RGB values to offset position
+                vec3 pos = newColor.rgb * 3.0;
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                gl_PointSize = uPointSize;
+            }
+
+        `,
+
+        fragmentShader: `
+
+            varying vec4 vColor;
+            
+            void main() {
+                gl_FragColor = vColor;
+            }
+        
+        `
+    });
+
+    const particles = new THREE.Points(pointsBuffer, pointMat);
+    particles.frustumCulled = false;
+    gridHelper.add( particles );
+    particles.position.set(-halfGridSize, 0.001, -halfGridSize);
+
+
+    // GUI setup
+    // ----------------------------------------------------------------
 
     // 2D GUI setup
     const gui = new GUI( { width: 300 } );
-    gui.add( parameters, 'radius', 0.0, 1.0 ).onChange( onChange );
-    gui.add( parameters, 'tube', 0.0, 1.0 ).onChange( onChange );
-    gui.add( parameters, 'tubularSegments', 10, 150, 1 ).onChange( onChange );
-    gui.add( parameters, 'radialSegments', 2, 20, 1 ).onChange( onChange );
-    gui.add( parameters, 'p', 1, 10, 1 ).onChange( onChange );
-    gui.add( parameters, 'q', 0, 10, 1 ).onChange( onChange );
+    gui.add( PARAMS, 'colorMode', ColorMode ).onChange( () => {
+        pointMat.uniforms.uColorMode.value = PARAMS.colorMode;
+        updateAxisLabels(PARAMS.colorMode);
+    });
+    gui.add( PARAMS, 'pointOpacity', 0.0, 1.0 ).onChange( () => {
+        pointMat.uniforms.uOpacity.value = PARAMS.pointOpacity;
+        particles.visible = PARAMS.pointOpacity > 0;
+    });
+    gui.add( PARAMS, 'pointSize', 1.0, 10.0 ).onChange( () => {
+        pointMat.uniforms.uPointSize.value = PARAMS.pointSize;
+    });
     
     // 3D GUI setup
     const guiMesh = new HTMLMesh( gui.domElement );
@@ -168,49 +343,6 @@
         gui.domElement.style.visibility = 'visible';
         group.remove(guiMesh)
     });
-
-
-    // Setup the grid and axes
-    // ----------------------------------------------------------------
-
-    //  ☆ Create grid
-    const gridSize = 3
-    const halfGridSize = gridSize / 2
-    const gridHelper = new THREE.GridHelper( 3, 10, 0x888888, 0x888888 );
-    gridHelper.position.set(0,-1,0);
-    scene.add( gridHelper );
-
-    //  ☆ Add axes to the grid
-    function addArrow(dir, color){
-        dir.normalize();
-        const origin = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
-        const length = gridSize * 1.1;
-        const hex = 0xffff00;
-        const arrowLength = length * 0.1;
-        const arrowWidth = arrowLength * 0.4;
-        const arrowHelper = new THREE.ArrowHelper( dir, origin, length, color, arrowLength, arrowWidth );
-        gridHelper.add(arrowHelper);
-    }
-    
-    addArrow(new THREE.Vector3( 0, 1, 0), 0x0000FF);
-    addArrow(new THREE.Vector3( 1, 0, 0), 0x00FF00);
-    addArrow(new THREE.Vector3( 0, 0, 1), 0xFF0000);
-
-    //  ☆ Add cube
-    const boxGeom = new THREE.BoxGeometry( gridSize, gridSize, gridSize );
-    const material = new THREE.MeshBasicMaterial( {
-        color: 0x555555,
-        side: THREE.BackSide,
-        transparent: true,
-        opacity: 0.2
-    } );
-    const cube = new THREE.Mesh( boxGeom, material );
-    cube.position.set(0,halfGridSize,0);
-    gridHelper.add( cube );
-
-    // Setup the grid and axes
-    // ----------------------------------------------------------------
-
 
     // Animation loop setup
     // ----------------------------------------------------------------
