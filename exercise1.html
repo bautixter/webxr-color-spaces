@@ -71,6 +71,55 @@
         pointSize : 5.0
     };
 
+    // Helper: Three.js hex number → CSS color string
+    const hexToCSS = c => `#${c.toString(16).padStart(6, '0')}`;
+
+    //  Color mode definitions
+    const colorModeDefs = {
+        [ColorMode.RGB]: {
+            labels:      ['R', 'G', 'B'],
+            order:       [0, 1, 2],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [1, 1, 1],
+            useNegative: false,
+        },
+        [ColorMode.HSV]: {
+            labels:      ['H', 'S', 'V'],
+            order:       [0, 1, 2],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [360, 1, 1],
+            useNegative: false,
+        },
+        [ColorMode.XYZ]: {
+            labels:      ['X', 'Z', 'Y'],
+            order:       [0, 2, 1],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [1, 1, 1],
+            useNegative: false,
+        },
+        [ColorMode.xyY]: {
+            labels:      ['x', 'Y', 'y'],
+            order:       [0, 2, 1],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [1, 1, 1],
+            useNegative: false,
+        },
+        [ColorMode.Lab]: {
+            labels:      ['a*', 'L*', 'b*'],
+            order:       [1, 0, 2],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [100, 128, 128],
+            useNegative: true,
+        },
+        [ColorMode.LCh]: {
+            labels:      ['L*', 'C*', 'h'],
+            order:       [0, 1, 2],
+            colors:      [0xFF0000, 0x00FF00, 0x0000FF],
+            limits:      [100, 150, 360],
+            useNegative: false,
+        },
+    };
+
     // Scene setup
     // ----------------------------------------------------------------
 
@@ -155,22 +204,11 @@
         gridHelper.add(arrowHelper);
     }
     
-    addArrow(new THREE.Vector3( 1, 0, 0), 0xFF0000);
-    addArrow(new THREE.Vector3( 0, 1, 0), 0x00FF00);
-    addArrow(new THREE.Vector3( 0, 0, 1), 0x0000FF);
+    const rgbDef = colorModeDefs[ColorMode.RGB];
+    addArrow(new THREE.Vector3( 1, 0, 0), rgbDef.colors[0]);
+    addArrow(new THREE.Vector3( 0, 1, 0), rgbDef.colors[1]);
+    addArrow(new THREE.Vector3( 0, 0, 1), rgbDef.colors[2]);
 
-    //  Axis labels
-    const axisLabelDefs = {
-        [ColorMode.RGB]: ['R', 'G', 'B'],
-        [ColorMode.HSV]: ['H', 'S', 'V'],
-        [ColorMode.XYZ]: ['X', 'Y', 'Z'],
-        [ColorMode.xyY]: ['x', 'y', 'Y'],
-        [ColorMode.Lab]: ['L*', 'a*', 'b*'],
-        [ColorMode.LCh]: ['L*', 'C*', 'h'],
-    };
-
-    // X=red(0xFF0000), Y=blue(0x0000FF), Z=green(0xFF0000)
-    const axisColors = ['#0xFF0000', '#0x0000FF', '#0xFF0000'];
 
     function makeAxisLabel(text, colorHex) {
         const canvas = document.createElement('canvas');
@@ -191,9 +229,9 @@
     const o = new THREE.Vector3(-halfGridSize, 0.001, -halfGridSize);
 
     const axisSprites = [
-        makeAxisLabel('R', axisColors[0]),  // X axis (green arrow)
-        makeAxisLabel('G', axisColors[1]),  // Y axis (blue arrow)
-        makeAxisLabel('B', axisColors[2]),  // Z axis (red arrow)
+        makeAxisLabel(rgbDef.labels[0], hexToCSS(rgbDef.colors[0])),  // X axis
+        makeAxisLabel(rgbDef.labels[1], hexToCSS(rgbDef.colors[1])),  // Y axis
+        makeAxisLabel(rgbDef.labels[2], hexToCSS(rgbDef.colors[2])),  // Z axis
     ];
     axisSprites[0].sprite.position.set(o.x + tipDist, o.y,          o.z         );
     axisSprites[1].sprite.position.set(o.x,           o.y + tipDist, o.z         );
@@ -201,14 +239,14 @@
     axisSprites.forEach(l => gridHelper.add(l.sprite));
 
     function updateAxisLabels(mode) {
-        const names = axisLabelDefs[mode];
+        const def = colorModeDefs[mode];
         axisSprites.forEach((lbl, i) => {
             lbl.ctx.clearRect(0, 0, lbl.canvas.width, lbl.canvas.height);
-            lbl.ctx.fillStyle = axisColors[i];
+            lbl.ctx.fillStyle = hexToCSS(def.colors[i]);
             lbl.ctx.font = 'bold 44px monospace';
             lbl.ctx.textAlign = 'center';
             lbl.ctx.textBaseline = 'middle';
-            lbl.ctx.fillText(names[i], 64, 32);
+            lbl.ctx.fillText(def.labels[i], 64, 32);
             lbl.tex.needsUpdate = true;
         });
     }
@@ -255,10 +293,11 @@
     const pointMat = new THREE.ShaderMaterial({
         transparent: true,
         uniforms: {
-          uTex: { value: texture },
-          uOpacity: { value: PARAMS.pointOpacity },
+          uTex:       { value: texture },
+          uOpacity:   { value: PARAMS.pointOpacity },
           uPointSize: { value: PARAMS.pointSize },
-          uColorMode: { value: PARAMS.colorMode }
+          uColorMode: { value: PARAMS.colorMode },
+          uAxisOrder: { value: new THREE.Vector3(...colorModeDefs[PARAMS.colorMode].order) }
         },
 
         vertexShader: colorSpaceFunctions + `
@@ -267,6 +306,7 @@
             uniform float     uOpacity;
             uniform float     uPointSize;
             uniform int       uColorMode;
+            uniform vec3      uAxisOrder;  // e.g. (0,1,2) → rgb, (1,2,0) → gbr
 
             varying vec4 vColor;
 
@@ -275,8 +315,12 @@
                 vec3 newColor = color_to_mode(texturePoint, uColorMode);
                 vColor = vec4(texturePoint, uOpacity);
 
-                // Use RGB values to offset position
-                vec3 pos = newColor.rgb * 3.0;
+                // Remap channels to axes using uAxisOrder
+                vec3 pos = vec3(
+                    newColor[int(uAxisOrder.x)],
+                    newColor[int(uAxisOrder.y)],
+                    newColor[int(uAxisOrder.z)]
+                ) * 3.0;
 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                 gl_PointSize = uPointSize;
@@ -307,7 +351,9 @@
     // 2D GUI setup
     const gui = new GUI( { width: 300 } );
     gui.add( PARAMS, 'colorMode', ColorMode ).onChange( () => {
+        const def = colorModeDefs[PARAMS.colorMode];
         pointMat.uniforms.uColorMode.value = PARAMS.colorMode;
+        pointMat.uniforms.uAxisOrder.value.set(...def.order);
         updateAxisLabels(PARAMS.colorMode);
     });
     gui.add( PARAMS, 'pointOpacity', 0.0, 1.0 ).onChange( () => {
