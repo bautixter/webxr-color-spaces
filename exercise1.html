@@ -45,18 +45,15 @@
     import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
     import { Reflector } from 'three/addons/objects/Reflector.js';
 
-    import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
-    import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
     import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
     import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+    import { createGui } from './javascript/vr_gui.js';
     import { colorSpaceFunctions } from './javascript/glsl_functions.js'
+    import { loadFile } from './javascript/file_loader.js'
 
     // Variable and constants definition
     // ----------------------------------------------------------------
-
-    const PI = 3.14159265359;
 
     const ColorMode = Object.freeze({
         RGB  : 0,
@@ -259,11 +256,10 @@
     }
 
     // Rebuilds the grid, arrows, cube and particle placement for a given mode def.
-    // Must be called after `particles` is defined.
     function applyLayout(def) {
         const useNeg = def.useNegative;
         const size   = useNeg ? 6 : 3;
-        const half   = size / 2;          // 3 for Lab, 1.5 otherwise
+        const half   = size / 2;
         const divs   = useNeg ? 20 : 10;
 
         // Replace grid helper
@@ -272,7 +268,7 @@
         gridHelper.position.set(0, -1, 0);
         scene.add(gridHelper);
 
-        // Cube: scale uniformly by 2 for Lab → 6×6×6, sitting on the floor
+        // Cube
         if (useNeg){
             cube.scale.set(2,1,2);
             cube.position.set(0, half/2, 0);
@@ -459,13 +455,6 @@
     const particles = new THREE.Points(pointsBuffer, pointMat);
     particles.frustumCulled = false;
 
-    applyLayout(colorModeDefs[PARAMS.colorMode]);
-
-    // Texture / video hot-swap
-    // ----------------------------------------------------------------
-
-    let currentVideo = null;
-
     function applyTexture(newTex, width, height) {
         const old = pointMat.uniforms.uTex.value;
         if (old && old !== newTex) old.dispose();
@@ -474,55 +463,23 @@
         applyLayout(colorModeDefs[PARAMS.colorMode]);
     }
 
-    function loadFile(file) {
-        const url = URL.createObjectURL(file);
-
-        if (currentVideo) {
-            currentVideo.pause();
-            currentVideo.src = '';
-            currentVideo = null;
-        }
-
-        if (file.type.startsWith('video/')) {
-            const video = document.createElement('video');
-            video.src = url;
-            video.loop = true;
-            video.muted = true;
-            video.playsInline = true;
-            currentVideo = video;
-            video.addEventListener('loadedmetadata', () => {
-                video.play();
-                const vidTex = new THREE.VideoTexture(video);
-                vidTex.minFilter = THREE.NearestFilter;
-                vidTex.magFilter = THREE.NearestFilter;
-                vidTex.generateMipmaps = false;
-                applyTexture(vidTex, video.videoWidth, video.videoHeight);
-            });
-        } else {
-            new THREE.TextureLoader().load(url, tex => {
-                tex.minFilter = THREE.NearestFilter;
-                tex.magFilter = THREE.NearestFilter;
-                tex.generateMipmaps = false;
-                applyTexture(tex, tex.image.width, tex.image.height);
-            });
-        }
-    }
+    applyLayout(colorModeDefs[PARAMS.colorMode]);
 
     // GUI setup
     // ----------------------------------------------------------------
+    const gui = createGui({ renderer, scene, camera, controls, controller1, controller2 });
 
-    // 2D GUI setup
-    const gui = new GUI( { width: 300 } );
-
+    // File field
     const fileInput = document.getElementById('fileInput');
     fileInput.addEventListener('change', e => {
         if (e.target.files[0]) {
-            loadFile(e.target.files[0]);
-            fileInput.value = '';   // allow reloading the same file
+            loadFile(e.target.files[0], (tex, w, h) => applyTexture(tex, w, h));
+            fileInput.value = '';
         }
     });
     gui.add({ loadFile: () => fileInput.click() }, 'loadFile').name('Load Image / Video');
 
+    // Color mode selector field
     gui.add( PARAMS, 'colorMode', ColorMode ).onChange( () => {
         const def = colorModeDefs[PARAMS.colorMode];
         pointMat.uniforms.uColorMode.value = PARAMS.colorMode;
@@ -530,38 +487,16 @@
         applyLayout(def);
         updateAxisLabels(PARAMS.colorMode);
     });
+
+    // Point opacity field
     gui.add( PARAMS, 'pointOpacity', 0.0, 1.0 ).onChange( () => {
         pointMat.uniforms.uOpacity.value = PARAMS.pointOpacity;
         particles.visible = PARAMS.pointOpacity > 0;
     });
+
+    // Point size field
     gui.add( PARAMS, 'pointSize', 1.0, 10.0 ).onChange( () => {
         pointMat.uniforms.uPointSize.value = PARAMS.pointSize;
-    });
-    
-    // 3D GUI setup
-    const guiMesh = new HTMLMesh( gui.domElement );
-    guiMesh.position.set(0,3,4.2);
-    guiMesh.rotation.set(-PI/4, 0, 0);
-    guiMesh.scale.setScalar( 2 );
-    
-    // VR interactive group
-    const group = new InteractiveGroup();
-    group.listenToXRControllerEvents( controller1 );
-    group.listenToXRControllerEvents( controller2 );
-    scene.add( group );
-
-    // Disable orbit controls in VR, enable in normal mode
-    renderer.xr.addEventListener( 'sessionstart', () => {
-        controls.enabled = false;
-        group.listenToPointerEvents( renderer, camera );
-        group.add(guiMesh);
-        gui.domElement.style.visibility = 'hidden';
-    });
-
-    renderer.xr.addEventListener( 'sessionend', () => {
-        controls.enabled = true;
-        gui.domElement.style.visibility = 'visible';
-        group.remove(guiMesh)
     });
 
     // Animation loop setup
