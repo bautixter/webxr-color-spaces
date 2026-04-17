@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Practical work #2 - Exercise 2</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: #ccc;
+				color: #000;
+				margin: 0;
+				overflow: hidden;
+				font-family: Arial, sans-serif;
+			}
+
+			a {
+				color: #f00;
+			}
+
+			#gui {
+				position: absolute;
+				top: 10px;
+				left: 10px;
+				background-color: rgba(0, 0, 0, 0.7);
+				padding: 15px;
+				border-radius: 5px;
+				color: #fff;
+				z-index: 100;
+			}
+
+			#gui label {
+				display: block;
+				margin-bottom: 10px;
+				font-size: 14px;
+			}
+
+			#gui input[type="file"] {
+				display: block;
+				margin-bottom: 10px;
+				padding: 5px;
+			}
+
+			#fileInfo {
+				margin-top: 10px;
+				font-size: 12px;
+				color: #aaa;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="gui">
+			<label for="textureFile">Load Texture (Image/Video):</label>
+			<input type="file" id="textureFile" accept="image/*,video/*">
+			<div id="fileInfo"></div>
+		</div>
+
+		<script type="x-shader/x-vertex" id="basicvertexshader">
+			varying vec2 vUv;
+			uniform float scaleElevation; 
+			uniform vec2 stepPixel;
+			uniform sampler2D tex;
+
+			void main() {
+				vUv = uv;
+				vec3 color = texture2D ( tex, vUv ).rgb;
+				float l = length ( color );
+				vec3 tmp = position;
+				tmp.z = tmp.z + l*scaleElevation;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(tmp, 1.0);
+			}
+		</script>
+
+		<script type="x-shader/x-fragment" id="basicfragmentshader">
+			varying vec2 vUv;
+			uniform sampler2D tex;
+
+			void main() {
+				vec3 color = texture2D ( tex, vUv ).rgb;
+				gl_FragColor.rgb = color;
+				gl_FragColor.a = 1.0;
+			}
+		</script>
+		<script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+		<script type="importmap">
+		  {
+			"imports": {
+			  "three": "https://unpkg.com/three@0.183.0/build/three.module.js",
+			  "three/addons/": "https://unpkg.com/three@0.183.0/examples/jsm/"
+			}
+		  }
+		</script>
+
+	  <script type="module">
+		import * as THREE from 'three';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js';
+
+			let camera, controls, scene, renderer;
+            let texture, room;
+			let shaderMaterial, plane, plane2;
+			let currentVideoElement = null;
+
+			init();
+			animate();
+
+			function init() {
+				console.log ( THREE.REVISION );
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 50 );
+				camera.position.set( 2, 8, 2 );
+				camera.up.set( 0, 0, 1 );
+
+				var light = new THREE.DirectionalLight( 0x888888, 1, 10, 1 );
+				light.position.set( 10, 7, 5 );
+				scene.add( light );
+
+				room = new THREE.LineSegments(
+					new BoxLineGeometry( 20, 20, 10, 20, 20, 10 ),
+					new THREE.LineBasicMaterial( { color: 0x808080 } )
+				);
+				scene.add( room );
+
+				var geometry = new THREE.BoxGeometry( 5, 5, .5, 10, 10, 2 );
+				var material = new THREE.MeshStandardMaterial( { roughness: 1.0, metalness: 0.0 } );
+                var base = new THREE.Mesh( geometry, material );
+                base.position.z = -2;
+				scene.add( base );
+
+                const loader = new THREE.TextureLoader();
+                loader.load( 'grenouille-gaus.jpg', function ( loadedTexture ) 
+                {
+					texture = loadedTexture;
+                    createPlanesWithTexture( texture, 'grenouille-gaus.jpg' );
+                });
+
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize( window.innerWidth, window.innerHeight );
+                
+                document.body.appendChild( renderer.domElement );
+                
+				// controls
+				controls = new OrbitControls( camera, renderer.domElement );
+
+				controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+				controls.dampingFactor = 0.05;
+
+				controls.screenSpacePanning = true;
+
+				controls.minDistance = 1;
+				controls.maxDistance = 50;
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+				// File input handler
+				document.getElementById('textureFile').addEventListener('change', handleFileSelect);
+			}
+
+			function createPlanesWithTexture( textureToUse, fileName ) {
+				var scaleElevation = 0.75;
+				var discret = 2;
+
+				// Remove existing planes if they exist
+				if ( plane ) scene.remove( plane );
+				if ( plane2 ) scene.remove( plane2 );
+
+				var basicElevationMaterial = new THREE.ShaderMaterial( {
+					vertexShader: document.querySelector( '#basicvertexshader' ).textContent.trim(),
+					fragmentShader: document.querySelector( '#basicfragmentshader' ).textContent.trim(),
+					uniforms: {
+						scaleElevation: { value: scaleElevation },
+						tex: { value: textureToUse },
+						}
+				} );
+
+				console.log ( textureToUse.image.width );
+				console.log ( textureToUse.image.height );
+				var scale = 4.0;
+                var factor = textureToUse.image.height / textureToUse.image.width;
+                var planeGeometry = new THREE.PlaneGeometry( scale, scale*factor, textureToUse.image.width/discret, textureToUse.image.height/discret );  
+                plane = new THREE.Mesh( planeGeometry, basicElevationMaterial);
+                plane.material.side = THREE.DoubleSide;
+                plane.position.z = -0.8;
+                plane.rotation.z = Math.PI;
+
+                scene.add(plane);
+
+				var basicMaterial = new THREE.MeshBasicMaterial ( { map: textureToUse } );
+                plane2 = new THREE.Mesh( planeGeometry, basicMaterial);
+                plane2.material.side = THREE.DoubleSide;
+                plane2.position.z = -1.6;
+                plane2.rotation.z = Math.PI;
+
+                scene.add(plane2);
+
+				updateFileInfo( fileName );
+			}
+
+			function handleFileSelect( event ) {
+				const file = event.target.files[0];
+				if ( !file ) return;
+
+				const fileName = file.name;
+				const isVideo = file.type.startsWith( 'video/' );
+				const isImage = file.type.startsWith( 'image/' );
+
+				if ( !isVideo && !isImage ) {
+					alert( 'Please select a valid image or video file.' );
+					return;
+				}
+
+				const fileURL = URL.createObjectURL( file );
+
+				if ( isImage ) {
+					const imageLoader = new THREE.TextureLoader();
+					imageLoader.load( fileURL, function ( loadedTexture ) {
+						texture = loadedTexture;
+						createPlanesWithTexture( texture, fileName );
+					}, undefined, function ( error ) {
+						console.error( 'Error loading image:', error );
+						alert( 'Error loading image file.' );
+					});
+				} else if ( isVideo ) {
+					loadVideoTexture( fileURL, fileName );
+				}
+			}
+
+			function loadVideoTexture( videoURL, fileName ) {
+				// Clean up previous video element if it exists
+				if ( currentVideoElement ) {
+					currentVideoElement.pause();
+					currentVideoElement.src = '';
+				}
+
+				// Create video element
+				const video = document.createElement( 'video' );
+				video.src = videoURL;
+				video.crossOrigin = 'anonymous';
+				video.loop = true;
+				video.muted = true;
+				video.play().catch( error => {
+					console.error( 'Error playing video:', error );
+					alert( 'Error loading video file. Make sure it\'s a valid video format.' );
+				});
+
+				currentVideoElement = video;
+
+				// Create VideoTexture from video element
+				const videoTexture = new THREE.VideoTexture( video );
+				videoTexture.minFilter = THREE.LinearFilter;
+				videoTexture.magFilter = THREE.LinearFilter;
+				videoTexture.format = THREE.RGBFormat;
+
+				// Use dummy dimensions for video - will be handled appropriately
+				// Most videos will have their aspect ratio handled by the VideoTexture
+				createPlanesWithTexture( videoTexture, fileName );
+			}
+
+			function updateFileInfo( fileName ) {
+				const fileInfo = document.getElementById( 'fileInfo' );
+				fileInfo.textContent = 'Loaded: ' + fileName;
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+				render();
+
+			}
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
