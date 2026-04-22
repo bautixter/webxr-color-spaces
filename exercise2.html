@@ -94,6 +94,9 @@
 
     // Base plane
     const geo  = new THREE.PlaneGeometry(10,10);
+    basicMaterial = new THREE.MeshBasicMaterial({
+        color: 'grey'
+    })
     plane2 = new THREE.Mesh(geo, basicMaterial);
     plane2.position.z = -1.6;
     plane2.rotation.z = Math.PI;
@@ -147,14 +150,14 @@
             uTex:              { value: texture },
             uColorMode:        { value: PARAMS.colorMode },
             uScaleElevation:   { value: PARAMS.scaleElevation },
-            uSelectedVariable: { value: 0 },
+            uSelectedVariable: { value: PARAMS.variableID },
         },
         vertexShader: colorSpaceFunctions + `
             varying vec2 vUv;
             
-            uniform float scaleElevation;
             uniform sampler2D uTex;
             uniform int       uColorMode;
+            uniform float     uScaleElevation;
             uniform int       uSelectedVariable;
 
             float getChannel(vec3 color, int channel) {
@@ -168,10 +171,10 @@
 
                 vec3 texturePoint = texture2D ( uTex, uv ).rgb;
                 vec3 newColor = color_to_mode(texturePoint, uColorMode);
-                float l = getChannel(newColor, selectedVariable);
+                float l = getChannel(newColor, uSelectedVariable);
 
                 vec3 newPos = position;
-                newPos.z = newPos.z + l * scaleElevation;
+                newPos.z = newPos.z + l * uScaleElevation;
 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(newPos, 1.0);
             }
@@ -202,7 +205,7 @@
         if (plane2) { scene.remove(plane2); plane2.geometry.dispose(); }
         
         // Map textures
-        elevationMaterial.uniforms.tex.value = tex;
+        elevationMaterial.uniforms.uTex.value = tex;
         basicMaterial.map = tex;
         basicMaterial.needsUpdate = true;
         
@@ -218,6 +221,8 @@
         plane2.rotation.z = Math.PI;
         scene.add(plane2);
     }
+
+    buildPlanes(texture,1000,1000);
 
     // GUI setup
     // ----------------------------------------------------------------
@@ -239,20 +244,28 @@
     // Specific variable selector
     let variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
     let updateVariable = (v) => {
+        // Update PARAMS
         PARAMS.variableChar = v;
         PARAMS.variableID = colorModeDefs[PARAMS.colorMode].indexOf(v);
         console.log(v, " y ", PARAMS.variableID);
+        
+        // Update elevation shader
+        elevationMaterial.uniforms.uSelectedVariable.value = PARAMS.variableID;
+        basicMaterial.needsUpdate = true;
     };
     variableSelector.onChange(updateVariable);
 
-    // Update variable selector when 
     colorModeSelector.onChange((v) => {
-        console.log(colorModeDefs[v]);
+        // Update variable selector
         variableSelector.destroy();
         PARAMS.variableChar = colorModeDefs[v][0];
         PARAMS.variableID = 0;
         variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[v]);
         variableSelector.onChange(updateVariable);
+
+        // Update elevation shader
+        elevationMaterial.uniforms.uColorMode.value = v;
+        basicMaterial.needsUpdate = true;        
     });
 
 
