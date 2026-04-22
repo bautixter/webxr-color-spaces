@@ -92,16 +92,6 @@
     light.position.set( 10, 7, 5 );
     scene.add( light );
 
-    // Base plane
-    const geo  = new THREE.PlaneGeometry(10,10);
-    basicMaterial = new THREE.MeshBasicMaterial({
-        color: 'grey'
-    })
-    plane2 = new THREE.Mesh(geo, basicMaterial);
-    plane2.position.z = -1.6;
-    plane2.rotation.z = Math.PI;
-    scene.add(plane2);
-
     // Renderer init
     renderer = new THREE.WebGLRenderer( { antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
@@ -135,14 +125,14 @@
 
     // Elevation plane definition
     // ----------------------------------------------------------------
-
+    
     // Default texture
     const texLoader = new THREE.TextureLoader();
     const texture = await texLoader.loadAsync('textures/joensuu.jpg');
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
-    
+
     // Elevation material definition
     const scaleElevation = 0.75;
     elevationMaterial = new THREE.ShaderMaterial( {
@@ -232,7 +222,7 @@
     const fileInput = document.getElementById('fileInput');
     fileInput.addEventListener('change', e => {
         if (e.target.files[0]) {
-            loadFile(e.target.files[0], (tex, w, h) => applyTexture(tex, w, h));
+            loadFile(e.target.files[0], (tex, w, h) => buildPlanes(tex, w, h));
             fileInput.value = '';
         }
     });
