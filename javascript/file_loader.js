@@ -4,7 +4,6 @@ let currentVideo = null;
 
 /**
  * Load an image or video file and call onLoad(texture, width, height).
- * The caller decides what to do with the texture (material swap, geometry rebuild, etc.)
  */
 export function loadFile(file, onLoad) {
     const url = URL.createObjectURL(file);

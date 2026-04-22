@@ -3,11 +3,7 @@ import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
 
 /**
- * Create a lil-gui instance wired for both desktop and WebXR VR sessions.
- * Returns the GUI — caller adds their own controls to it.
- *
- * @param {object} ctx  - { renderer, scene, camera, controls, controller1, controller2 }
- * @param {object} opts - { width, position, rotation, scale }
+ * Creates GUI using Three.JS GUI module (lil-gui) handling AR support
  */
 export function createGui(
     { renderer, scene, camera, controls, controller1, controller2 },
