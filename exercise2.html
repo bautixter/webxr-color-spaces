@@ -44,7 +44,8 @@
     
     let camera, controls, scene, renderer;
     let elevationMaterial, basicMaterial, plane, plane2;
-    let currentDiscret = 2, currentScale = 4.0;
+    let currentScale = 4.0;
+    let currentWidth = 1000, currentHeight = 1000;
 
     // Aux data
     // ----------------------------------------------------------------
@@ -71,7 +72,9 @@
         colorMode: ColorMode.RGB,
         scaleElevation: 0.75,
         variableChar: 'R',
-        variableID: 0
+        resolution: 1.0,
+        variableID: 0,
+        discretization: 2,
     }
 
     // Scene initialization
@@ -128,7 +131,7 @@
     
     // Default texture
     const texLoader = new THREE.TextureLoader();
-    const texture = await texLoader.loadAsync('textures/joensuu.jpg');
+    let texture = await texLoader.loadAsync('textures/joensuu.jpg');
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
@@ -184,11 +187,14 @@
     // Plane update function
     basicMaterial = new THREE.MeshBasicMaterial( { side: THREE.DoubleSide } );
     function buildPlanes(tex, width, height) {
+        texture = tex;
+        currentWidth = width;
+        currentHeight = height;
         const factor = height / width;
         const geo = new THREE.PlaneGeometry(
             currentScale, currentScale * factor,
-            Math.floor(width  / currentDiscret),
-            Math.floor(height / currentDiscret)
+            Math.floor(width  / PARAMS.discretization),
+            Math.floor(height / PARAMS.discretization)
         );
         
         if (plane)  { scene.remove(plane);  plane.geometry.dispose(); }
@@ -261,6 +267,7 @@
         basicMaterial.needsUpdate = true;        
     });
 
+    gui.add(PARAMS, 'discretization', 1, 100, 1).onChange(() => buildPlanes(texture, currentWidth, currentHeight));
 
     // Controls setup
     // ----------------------------------------------------------------

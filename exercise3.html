@@ -43,7 +43,8 @@
 
     let camera, controls, scene, renderer;
     let elevationMaterial, basicMaterial, plane, plane2;
-    let currentDiscret = 2, currentScale = 4.0;
+    let currentScale = 4.0;
+    let currentWidth = 1000, currentHeight = 1000;
 
     // Aux data
     // ----------------------------------------------------------------
@@ -72,7 +73,8 @@
         variableChar: 'R',
         variableID: 0,
         planePos: new THREE.Vector3(0,0,-0.8),
-        ambient_intensity: 0.15
+        ambient_intensity: 0.15,
+        discretization: 1,
     }
 
     const DIRLIGHT = {
@@ -138,7 +140,7 @@
     
     // Default texture
     const texLoader = new THREE.TextureLoader();
-    const texture = await texLoader.loadAsync('textures/joensuu.jpg');
+    let texture = await texLoader.loadAsync('textures/joensuu.jpg');
     texture.minFilter = THREE.NearestFilter;
     texture.magFilter = THREE.NearestFilter;
     texture.generateMipmaps = false;
@@ -235,11 +237,15 @@
     // Plane update function
     basicMaterial = new THREE.MeshBasicMaterial( { side: THREE.DoubleSide } );
     function buildPlanes(tex, width, height) {
+        texture = tex;
+        currentWidth = width;
+        currentHeight = height;
+
         const factor = height / width;
         const geo = new THREE.PlaneGeometry(
             currentScale, currentScale * factor,
-            Math.floor(width  / currentDiscret),
-            Math.floor(height / currentDiscret)
+            Math.floor(width  / PARAMS.discretization),
+            Math.floor(height / PARAMS.discretization)
         );
         
         if (plane)  { scene.remove(plane);  plane.geometry.dispose(); }
@@ -316,7 +322,10 @@
         basicMaterial.needsUpdate = true;        
     });
 
+    // Discrete factor
+    gui.add(PARAMS, 'discretization', 1, 100, 1).onChange(() => buildPlanes(texture, currentWidth, currentHeight));
 
+    // Light variables
     const updateLight = (v) => {
         // Pos update
         DIRLIGHT.direction = PARAMS.planePos.clone().sub(DIRLIGHT.position).normalize();
@@ -335,20 +344,17 @@
     lightFolder.add(DIRLIGHT.position, 'y', -20, 20).onChange(updateLight);
     lightFolder.add(DIRLIGHT.position, 'z', -20, 20).onChange(updateLight);
 
-    // Directional Light variables
     let dIntensitySelector = lightFolder.add(DIRLIGHT, 'intensity', .0, 2.0).name('Directional Light Intensity');
     dIntensitySelector.onChange((v) => {
         elevationMaterial.uniforms.uId.value = v;
         elevationMaterial.needsUpdate = true;
     });
     
-    // Ambient Light variables
-    let aIntensitySelector = lightFolder.add(PARAMS, 'ambient_intensity', .0, .5).name('Directional Light Intensity');
+    let aIntensitySelector = lightFolder.add(PARAMS, 'ambient_intensity', .0, .5).name('Ambient Light Intensity');
     aIntensitySelector.onChange((v) => {
         elevationMaterial.uniforms.uIa.value = v;
         elevationMaterial.needsUpdate = true;
     });
-
 
     // Controls setup
     // ----------------------------------------------------------------
