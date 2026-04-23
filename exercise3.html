@@ -153,6 +153,7 @@
             uTex:              { value: texture },
             uColorMode:        { value: PARAMS.colorMode },
             uScaleElevation:   { value: PARAMS.scaleElevation },
+            uStep:             { value: PARAMS.discretization },
             uSelectedVariable: { value: PARAMS.variableID },
             uLightDir:         { value: DIRLIGHT.direction },
             uId:               { value: DIRLIGHT.intensity },
@@ -197,6 +198,7 @@
             uniform sampler2D uTex;
             uniform int       uColorMode;
             uniform int       uSelectedVariable;
+            uniform int       uStep;
             uniform vec3      uLightDir;
             uniform float     uId;
             uniform float     uIa;
@@ -213,7 +215,7 @@
             }
 
             void main() {
-                vec2 texelSize = vec2(1.0) / vec2(textureSize(uTex, 0));
+                vec2 texelSize = vec2(1.0) / vec2(textureSize(uTex, 0)) * vec2(uStep, uStep);
 
                 float hLeft  = h(vUv - vec2(texelSize.x, 0.0));
                 float hRight = h(vUv + vec2(texelSize.x, 0.0));
@@ -248,7 +250,8 @@
             Math.floor(width  / PARAMS.discretization),
             Math.floor(height / PARAMS.discretization)
         );
-        
+        elevationMaterial.uniforms.uStep.value = PARAMS.discretization;
+
         if (plane)  { scene.remove(plane);  plane.geometry.dispose(); }
         if (plane2) { scene.remove(plane2); plane2.geometry.dispose(); }
         
@@ -280,6 +283,8 @@
     // ----------------------------------------------------------------
     const gui = createGui({ renderer, scene, camera, controls, controller1, controller2 });
 
+    const fileFolder = gui.addFolder("Texture Settings")
+
     // File field
     const fileInput = document.getElementById('fileInput');
     fileInput.addEventListener('change', e => {
@@ -288,14 +293,20 @@
             fileInput.value = '';
         }
     });
-    gui.add({ loadFile: () => fileInput.click() }, 'loadFile').name('Load Image / Video');
+    fileFolder.add({ loadFile: () => fileInput.click() }, 'loadFile').name('Load Image / Video');
+
+    // Discrete factor
+    fileFolder.add(PARAMS, 'discretization', 1, 100, 1).onChange(() => buildPlanes(texture, currentWidth, currentHeight));
+
+
+    const colorFolder = gui.addFolder('Color Settings');
 
     // Color mode selector
-    let colorModeSelector = gui.add(PARAMS, 'colorMode', ColorMode);
+    let colorModeSelector = colorFolder.add(PARAMS, 'colorMode', ColorMode);
     colorModeSelector.name("Color Mode");
     
     // Specific variable selector
-    let variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
+    let variableSelector = colorFolder.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
     variableSelector.name("Coordinate")
     let updateVariable = (v) => {
         // Update PARAMS
@@ -314,7 +325,7 @@
         variableSelector.destroy();
         PARAMS.variableChar = colorModeDefs[v][0];
         PARAMS.variableID = 0;
-        variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[v]);
+        variableSelector = colorFolder.add(PARAMS, 'variableChar', colorModeDefs[v]);
         variableSelector.onChange(updateVariable);
         variableSelector.name("Coordinate");
 
@@ -322,9 +333,6 @@
         elevationMaterial.uniforms.uColorMode.value = v;
         basicMaterial.needsUpdate = true;        
     });
-
-    // Discrete factor
-    gui.add(PARAMS, 'discretization', 1, 100, 1).onChange(() => buildPlanes(texture, currentWidth, currentHeight));
 
     // Light variables
     const updateLight = (v) => {
@@ -341,7 +349,7 @@
 
         elevationMaterial.needsUpdate = true;
     }
-    const lightFolder = gui.addFolder('Light');
+    const lightFolder = gui.addFolder('Light Settings');
     lightFolder.add(DIRLIGHT.position, 'x', -20, 20).onChange(updateLight);
     lightFolder.add(DIRLIGHT.position, 'y', -20, 20).onChange(updateLight);
     lightFolder.add(DIRLIGHT.position, 'z', -20, 20).onChange(updateLight);
