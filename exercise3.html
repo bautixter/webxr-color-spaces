@@ -74,14 +74,15 @@
         variableID: 0,
         planePos: new THREE.Vector3(0,0,-0.8),
         ambient_intensity: 0.15,
-        discretization: 1,
+        discretization: 2,
     }
 
     const DIRLIGHT = {
         intensity: 1,
         position: new THREE.Vector3(10, 7, 5),
     };
-    DIRLIGHT.direction = PARAMS.planePos.clone().sub(DIRLIGHT.position).normalize();
+    const _wd = DIRLIGHT.position.clone().sub(PARAMS.planePos).normalize();
+    DIRLIGHT.direction = new THREE.Vector3(-_wd.x, -_wd.y, _wd.z);
 
     // Scene initialization
     // ----------------------------------------------------------------
@@ -328,7 +329,8 @@
     // Light variables
     const updateLight = (v) => {
         // Pos update
-        DIRLIGHT.direction = PARAMS.planePos.clone().sub(DIRLIGHT.position).normalize();
+        const worldDir = DIRLIGHT.position.clone().sub(PARAMS.planePos).normalize();
+        DIRLIGHT.direction = new THREE.Vector3(-worldDir.x, -worldDir.y, worldDir.z);
         elevationMaterial.uniforms.uLightDir.value = DIRLIGHT.direction;
         light.position.copy(DIRLIGHT.position);
         helper.update();
