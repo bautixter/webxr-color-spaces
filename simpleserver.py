@@ -1,5 +1,6 @@
 import mimetypes
 import os
+import socket
 import threading
 import webbrowser
 from flask import Flask, send_file
@@ -40,7 +41,19 @@ if __name__ == "__main__":
     chosen = choice
     port = 8000
 
-    url = f"http://localhost:{port}/{EXERCISES[chosen]}"
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))
+        wifi_ip = s.getsockname()[0]
+
+    url = f"https://localhost:{port}/{EXERCISES[chosen]}"
+    wifi_url = f"https://{wifi_ip}:{port}/{EXERCISES[chosen]}"
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-    print(f"Serving {EXERCISES[chosen]} at {url}")
-    app.run(port=port)
+
+    print(f"\n=== Practical Work #2 — Exercise {chosen} ===")
+    print("Running with ad-hoc HTTPS (self-signed cert)")
+    print(f"Local:  {url}")
+    print(f"WiFi:   {wifi_url}")
+    print("On your headset/device, navigate to the WiFi URL above.")
+    print("You will need to accept the self-signed certificate warning.\n")
+
+    app.run(host="0.0.0.0", port=port, ssl_context="adhoc")
