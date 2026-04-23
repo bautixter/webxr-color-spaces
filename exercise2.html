@@ -230,9 +230,11 @@
 
     // Color mode selector
     let colorModeSelector = gui.add(PARAMS, 'colorMode', ColorMode);
+    colorModeSelector.name("Color Mode");
     
     // Specific variable selector
     let variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
+    variableSelector.name("Coordinate")
     let updateVariable = (v) => {
         // Update PARAMS
         PARAMS.variableChar = v;
@@ -252,6 +254,7 @@
         PARAMS.variableID = 0;
         variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[v]);
         variableSelector.onChange(updateVariable);
+        variableSelector.name("Coordinate");
 
         // Update elevation shader
         elevationMaterial.uniforms.uColorMode.value = v;
