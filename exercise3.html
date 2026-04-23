@@ -42,6 +42,7 @@
     // ----------------------------------------------------------------
 
     import * as THREE from 'three';
+    import { ARButton } from 'three/addons/webxr/ARButton.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js';
     import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
@@ -80,7 +81,7 @@
         scaleElevation: 0.75,
         variableChar: 'R',
         variableID: 0,
-        planePos: new THREE.Vector3(0,0,-0.8),
+        planePos: new THREE.Vector3(0,0,0),
         ambient_intensity: 0.15,
         discretization: 2,
     }
@@ -99,11 +100,12 @@
     console.log ( THREE.REVISION );
     scene = new THREE.Scene();
     scene.background = new THREE.Color( 0xffffff );
+    const sceneGroup = new THREE.Group();
+    scene.add( sceneGroup );
 
     // Camera init
     camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 50 );
-    camera.position.set( 2, 8, 2 );
-    camera.up.set( 0, 0, 1 );
+    camera.position.set( -3, 4, 6 );
 
     // Light init
     var light = new THREE.DirectionalLight( 0x888888, DIRLIGHT.intensity );
@@ -117,8 +119,10 @@
     renderer = new THREE.WebGLRenderer( { canvas: document.getElementById('c'), antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
-    
 
+    // XR init
+    renderer.xr.enabled = true;
+    document.body.appendChild( ARButton.createButton( renderer ) );
 
     // XR handling
     // ----------------------------------------------------------------
@@ -260,26 +264,26 @@
         );
         elevationMaterial.uniforms.uStep.value = PARAMS.discretization;
 
-        if (plane)  { scene.remove(plane);  plane.geometry.dispose(); }
-        if (plane2) { scene.remove(plane2); plane2.geometry.dispose(); }
-        
+        if (plane)  { sceneGroup.remove(plane);  plane.geometry.dispose(); }
+        if (plane2) { sceneGroup.remove(plane2); plane2.geometry.dispose(); }
+
         // Map textures
         elevationMaterial.uniforms.uTex.value = tex;
         basicMaterial.map = tex;
         basicMaterial.needsUpdate = true;
-        
+
         // Elevation plane
         plane = new THREE.Mesh(geo, elevationMaterial);
         plane.position.copy(PARAMS.planePos);
-        plane.rotation.z = Math.PI;
-        scene.add(plane);
+        plane.rotation.set(-Math.PI/2, 0, 0);
+        sceneGroup.add(plane);
 
         // Base plane
         plane2 = new THREE.Mesh(geo, basicMaterial);
         plane2.position.copy(PARAMS.planePos);
-        plane2.position.z -= 0.8;
-        plane2.rotation.z = Math.PI;
-        scene.add(plane2);
+        plane2.position.y -= 0.8;
+        plane2.rotation.set(-Math.PI/2, 0, 0);
+        sceneGroup.add(plane2);
 
         // Additional light handling
         light.target = plane;
@@ -287,9 +291,18 @@
 
     buildPlanes(texture,1000,1000);
 
+    // Controls setup (must be before createGui so the reference is valid in XR handlers)
+    // ----------------------------------------------------------------
+    controls = new OrbitControls( camera, renderer.domElement );
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 1;
+    controls.maxDistance = 50;
+
     // GUI setup
     // ----------------------------------------------------------------
-    const gui = createGui({ renderer, scene, camera, controls, controller1, controller2 });
+    const gui = createGui({ renderer, scene, camera, controls, controller1, controller2 }, { contentGroup: sceneGroup });
 
     const fileFolder = gui.addFolder("Texture Settings")
 
@@ -305,42 +318,44 @@
 
     // Discrete factor
     fileFolder.add(PARAMS, 'discretization', 1, 100, 1).onChange(() => buildPlanes(texture, currentWidth, currentHeight));
-
+    fileFolder.add(PARAMS, 'scaleElevation', 0, 1).onChange((v) => {
+        elevationMaterial.uniforms.uScaleElevation.value = v;
+        elevationMaterial.needsUpdate = true;
+    })
 
     const colorFolder = gui.addFolder('Color Settings');
 
     // Color mode selector
-    let colorModeSelector = colorFolder.add(PARAMS, 'colorMode', ColorMode);
-    colorModeSelector.name("Color Mode");
+    let colorModeSelector = colorFolder.add(PARAMS, 'colorMode', 0, 5, 1);
+    colorModeSelector.name("Color Mode").name("Color Mode: RGB");
     
     // Specific variable selector
-    let variableSelector = colorFolder.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
-    variableSelector.name("Coordinate")
+    let variableSelector = colorFolder.add(PARAMS, 'variableID', 0, 2, 1);
+    variableSelector.name("Coordinate: R");
     let updateVariable = (v) => {
-        // Update PARAMS
-        PARAMS.variableChar = v;
-        PARAMS.variableID = colorModeDefs[PARAMS.colorMode].indexOf(v);
-        console.log(v, " y ", PARAMS.variableID);
-        
         // Update elevation shader
-        elevationMaterial.uniforms.uSelectedVariable.value = PARAMS.variableID;
+        elevationMaterial.uniforms.uSelectedVariable.value = v;
         basicMaterial.needsUpdate = true;
+        variableSelector.name("Coordinate: " + colorModeDefs[PARAMS.colorMode][v])
     };
     variableSelector.onChange(updateVariable);
 
     colorModeSelector.onChange((v) => {
         // Update variable selector
         variableSelector.destroy();
-        PARAMS.variableChar = colorModeDefs[v][0];
         PARAMS.variableID = 0;
-        variableSelector = colorFolder.add(PARAMS, 'variableChar', colorModeDefs[v]);
+        variableSelector = colorFolder.add(PARAMS, 'variableID', 0, 2, 1);
         variableSelector.onChange(updateVariable);
-        variableSelector.name("Coordinate");
+        variableSelector.name("Coordinate: " + colorModeDefs[v][0]);
 
         // Update elevation shader
         elevationMaterial.uniforms.uColorMode.value = v;
-        basicMaterial.needsUpdate = true;        
+        elevationMaterial.uniforms.uSelectedVariable.value = 0;
+        basicMaterial.needsUpdate = true;  
+        
+        colorModeSelector.name("Color Mode: " + Object.keys(ColorMode).find(k => ColorMode[k] == v));
     });
+
 
     // Light variables
     const updateLight = (v) => {
@@ -374,16 +389,6 @@
         elevationMaterial.needsUpdate = true;
     });
 
-    // Controls setup
-    // ----------------------------------------------------------------
-
-    controls = new OrbitControls( camera, renderer.domElement );
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.screenSpacePanning = true;
-    controls.minDistance = 1;
-    controls.maxDistance = 50;
-
     // Animation loop
     // ----------------------------------------------------------------
 
@@ -394,17 +399,10 @@
         renderer.setSize( window.innerWidth, window.innerHeight );
     }
 
-    function animate() {
-        requestAnimationFrame( animate );
+    renderer.setAnimationLoop( () => {
         controls.update();
-        render();
-    }
-
-    function render() {
         renderer.render( scene, camera );
-    }
-
-    animate();
+    } );
 
     </script>
 
