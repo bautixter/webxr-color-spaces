@@ -68,7 +68,8 @@
     const PARAMS = {
         colorMode : ColorMode.RGB,
         pointOpacity : 1.0,
-        pointSize : 5.0
+        pointSize : 5.0,
+        sampleStep : 5,
     };
 
     // Helper: Three.js hex number → CSS color string
@@ -131,15 +132,29 @@
 
     // Initialize the scene
     const scene = new THREE.Scene();
+    const sceneGroup = new THREE.Group();
+    scene.add(sceneGroup);
     
     // Create a WebGLRenderer and enable shadow maps
     const canvas = document.querySelector('#c');
-    const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
-    renderer.shadowMap.enabled = true;
+    const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
+    renderer.shadowMap.enabled = false;
 
     // VR init
     renderer.xr.enabled = true;
     document.body.appendChild( ARButton.createButton( renderer ) );
+
+    // Scale the scene to tabletop size in AR and restore on exit
+    renderer.xr.addEventListener('sessionstart', () => {
+        scene.background = null;
+        sceneGroup.scale.setScalar(0.1);          // 3 m → 30 cm
+        sceneGroup.position.set(0, 0.8, -1.5);    // ~table height, 1.5 m ahead
+    });
+    renderer.xr.addEventListener('sessionend', () => {
+        scene.background = new THREE.Color(0x333333);
+        sceneGroup.scale.setScalar(1);
+        sceneGroup.position.set(0, 0, 0);
+    });
 
     // CSS2D label renderer (renders HTML divs in 3D space, no canvas needed)
     const labelRenderer = new CSS2DRenderer();
@@ -160,17 +175,6 @@
 
     // Let's also set up the scene with some lights
     scene.background = new THREE.Color( 0x333333 );
-    {
-        const point1 = new THREE.PointLight(0xFFFFFF, 8);
-        point1.position.set(0, 3, 0);
-        const point2 = new THREE.PointLight(0xFFFFFF, 5);
-        point2.position.set(3, 2, 3);
-        const ambient = new THREE.AmbientLight(0xFFFFFF, 0.2);
-
-        scene.add(point1);
-        scene.add(point2);
-        scene.add(ambient);
-    }
 
     // XR handling
     // ----------------------------------------------------------------
@@ -264,10 +268,10 @@
         const divs   = useNeg ? 20 : 10;
 
         // Replace grid helper
-        if (gridHelper) scene.remove(gridHelper);
+        if (gridHelper) sceneGroup.remove(gridHelper);
         gridHelper = new THREE.GridHelper(size, divs, 0x888888, 0x888888);
         gridHelper.position.set(0, -1, 0);
-        scene.add(gridHelper);
+        sceneGroup.add(gridHelper);
 
         // Cube
         if (useNeg){
@@ -386,15 +390,24 @@
     // Build UV and position buffers for a given texture resolution
     const pointsBuffer = new THREE.BufferGeometry();
 
-    function rebuildGeometry(width, height) {
-        const total = width * height;
+    let texWidth = 0, texHeight = 0;
+    const MAX_POINTS = 150_000;
+    const computeStep = (w, h) => Math.max(1, Math.ceil(Math.sqrt((w * h) / MAX_POINTS)));
+
+    function rebuildGeometry(width, height, step) {
+        texWidth = width; texHeight = height;
+        if (step === undefined) step = computeStep(width, height);
+        PARAMS.sampleStep = step;
+        const cols = Math.ceil(width  / step);
+        const rows = Math.ceil(height / step);
+        const total = cols * rows;
         const pos = new Float32Array(total * 3);
         const uvs = new Float32Array(total * 2);
-        let count = 0;
-        for (let x = 0; x < width; x++) {
-            for (let y = 0; y < height; y++) {
-                uvs[count++] = (x + 0.5) / width;
-                uvs[count++] = (y + 0.5) / height;
+        let idx = 0;
+        for (let x = 0; x < width; x += step) {
+            for (let y = 0; y < height; y += step) {
+                uvs[idx++] = (x + 0.5) / width;
+                uvs[idx++] = (y + 0.5) / height;
             }
         }
         pointsBuffer.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -498,6 +511,11 @@
     // Point size field
     gui.add( PARAMS, 'pointSize', 1.0, 10.0 ).onChange( () => {
         pointMat.uniforms.uPointSize.value = PARAMS.pointSize;
+    });
+
+    // Sample step field (1 = every pixel, 2 = every other pixel, …)
+    gui.add( PARAMS, 'sampleStep', 1, 10, 1 ).name('Sample step').onChange( () => {
+        rebuildGeometry(texWidth, texHeight, PARAMS.sampleStep);
     });
 
     // Animation loop setup
