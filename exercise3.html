@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Practical Work #2 - Exercise 2</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: #ccc;
+				color: #000;
+			}
+
+			a {
+				color: #f00;
+			}
+		</style>
+	</head>
+
+	<body>
+        <input id="fileInput" type="file" accept="image/*,video/*" style="display:none">
+		<script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+		<script type="importmap">
+		  {
+			"imports": {
+			  "three": "https://unpkg.com/three@0.183.0/build/three.module.js",
+			  "three/addons/": "https://unpkg.com/three@0.183.0/examples/jsm/"
+			}
+		  }
+		</script>
+
+	  <script type="module">
+
+    // Variable definition
+    // ----------------------------------------------------------------
+
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js';
+    import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+    import { loadFile } from './javascript/file_loader.js';
+    import { colorSpaceFunctions } from './javascript/glsl_functions.js';
+    import { createGui } from './javascript/vr_gui.js';
+
+    let camera, controls, scene, renderer;
+    let elevationMaterial, basicMaterial, plane, plane2;
+    let currentDiscret = 2, currentScale = 4.0;
+
+    // Aux data
+    // ----------------------------------------------------------------
+    
+    const ColorMode = Object.freeze({
+        RGB  : 0,
+        HSV  : 1,
+        XYZ  : 2,
+        xyY  : 3,
+        Lab  : 4,
+        LCh  : 5,
+    });
+
+    const colorModeDefs = {
+        [ColorMode.RGB]: ['R', 'G', 'B'],
+        [ColorMode.HSV]: ['H', 'S', 'V'],
+        [ColorMode.XYZ]: ['X', 'Y', 'Z'],
+        [ColorMode.xyY]: ['x', 'y', 'Y'],
+        [ColorMode.Lab]: ['L*', 'a*', 'b*'],
+        [ColorMode.LCh]: ['L*', 'C*', 'h'],
+    };
+
+    const PARAMS = {
+        colorMode: ColorMode.RGB,
+        scaleElevation: 0.75,
+        variableChar: 'R',
+        variableID: 0
+    }
+
+    const DIRLIGHT = {
+        x: 10,
+        y: 7,
+        z: 5,
+        intensity: 1,
+        direction: new THREE.Vector3(1.0,1.0,0.0)
+    }
+
+    const AMBIENT_INTENSITY = 0.15;
+
+    // Scene initialization
+    // ----------------------------------------------------------------
+
+    // Three.js scene
+    console.log ( THREE.REVISION );
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color( 0xffffff );
+
+    // Camera init
+    camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 50 );
+    camera.position.set( 2, 8, 2 );
+    camera.up.set( 0, 0, 1 );
+
+    // Light init
+    var light = new THREE.DirectionalLight( 0x888888, DIRLIGHT.intensity );
+    light.position.set( DIRLIGHT.x, DIRLIGHT.y, DIRLIGHT.z );
+    scene.add( light );
+
+    const helper = new THREE.DirectionalLightHelper( light, 5 );
+    scene.add(helper);
+
+    // Renderer init
+    renderer = new THREE.WebGLRenderer( { antialias: true } );
+    renderer.setPixelRatio( window.devicePixelRatio );
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    
+    document.body.appendChild( renderer.domElement );
+
+    // XR handling
+    // ----------------------------------------------------------------
+
+    const buffGeo = new THREE.BufferGeometry();
+    buffGeo.setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 5 ) ] );
+
+    const controller1 = renderer.xr.getController( 0 );
+    controller1.add( new THREE.Line( buffGeo ) );
+    scene.add( controller1 );
+
+    const controller2 = renderer.xr.getController( 1 );
+    controller2.add( new THREE.Line( buffGeo ) );
+    scene.add( controller2 );
+
+    const controllerModelFactory = new XRControllerModelFactory();
+
+    const controllerGrip1 = renderer.xr.getControllerGrip( 0 );
+    controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
+    scene.add( controllerGrip1 );
+
+    const controllerGrip2 = renderer.xr.getControllerGrip( 1 );
+    controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
+    scene.add( controllerGrip2 );
+
+    // Elevation plane definition
+    // ----------------------------------------------------------------
+    
+    // Default texture
+    const texLoader = new THREE.TextureLoader();
+    const texture = await texLoader.loadAsync('textures/joensuu.jpg');
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+
+    // Elevation material definition
+    const scaleElevation = 0.75;
+    elevationMaterial = new THREE.ShaderMaterial( {
+        uniforms: {
+            uTex:              { value: texture },
+            uColorMode:        { value: PARAMS.colorMode },
+            uScaleElevation:   { value: PARAMS.scaleElevation },
+            uSelectedVariable: { value: PARAMS.variableID },
+            uLightDir:         { value: DIRLIGHT.direction },
+            uId:               { value: DIRLIGHT.intensity},
+            uIa:               { value: AMBIENT_INTENSITY },
+            uKd:               { value: 1.0 },
+            uKa:               { value: 1.0 },
+        },
+        vertexShader: colorSpaceFunctions + `
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+            
+            uniform sampler2D uTex;
+            uniform int       uColorMode;
+            uniform float     uScaleElevation;
+            uniform int       uSelectedVariable;
+
+            float getChannel(vec3 color, int channel) {
+                if (channel == 0) return color.r;
+                if (channel == 1) return color.g;
+                return color.b;
+            }
+
+            void main() {
+                vUv = uv;
+
+                vec3 texturePoint = texture2D( uTex, uv ).rgb;
+                vec3 newColor = color_to_mode(texturePoint, uColorMode);
+                float l = getChannel(newColor, uSelectedVariable);
+
+                vec3 newPos = position;
+                newPos.z = newPos.z + l * uScaleElevation;
+
+                vWorldPos = (modelMatrix * vec4(newPos, 1.0)).xyz;;
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(newPos, 1.0);
+            }
+        `,
+        fragmentShader: colorSpaceFunctions + `
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+
+            uniform sampler2D uTex;
+            uniform int       uColorMode;
+            uniform int       uSelectedVariable;
+            uniform vec3      uLightDir;
+            uniform float     uId;
+            uniform float     uIa;
+            uniform float     uKd;
+            uniform float     uKa;
+
+            float h(vec2 uv){
+                vec3 texturePoint = texture2D(uTex, uv).rgb;
+                vec3 color = color_to_mode(texturePoint, uColorMode);
+
+                if (uSelectedVariable == 0) return color.r;
+                if (uSelectedVariable == 1) return color.g;
+                return color.b;
+            }
+
+            void main() {
+                vec2 texelSize = vec2(1.0) / vec2(textureSize(uTex, 0));
+
+                float hLeft  = h(vUv - vec2(texelSize.x, 0.0));
+                float hRight = h(vUv + vec2(texelSize.x, 0.0));
+                
+                float hDown  = h(vUv - vec2(0.0, texelSize.y));
+                float hUp    = h(vUv + vec2(0.0, texelSize.y));
+
+                float dhdu = (hRight - hLeft) / (2.0 * texelSize.x);
+                float dhdv = (hUp - hDown) / (2.0 * texelSize.y);
+
+                vec3 n = normalize(vec3(-dhdu, -dhdv, 1.0));
+                
+                float lamb = uIa * uKa + uId * uKd * max(0.0, dot(n, uLightDir));
+
+                vec3 color = texture2D( uTex, vUv ).rgb;
+                gl_FragColor = vec4(color * lamb, 1.0);
+            }
+        `
+    } );
+    elevationMaterial.side = THREE.DoubleSide;
+
+    // Plane update function
+    basicMaterial = new THREE.MeshBasicMaterial( { side: THREE.DoubleSide } );
+    function buildPlanes(tex, width, height) {
+        const factor = height / width;
+        const geo = new THREE.PlaneGeometry(
+            currentScale, currentScale * factor,
+            Math.floor(width  / currentDiscret),
+            Math.floor(height / currentDiscret)
+        );
+        
+        if (plane)  { scene.remove(plane);  plane.geometry.dispose(); }
+        if (plane2) { scene.remove(plane2); plane2.geometry.dispose(); }
+        
+        // Map textures
+        elevationMaterial.uniforms.uTex.value = tex;
+        basicMaterial.map = tex;
+        basicMaterial.needsUpdate = true;
+        
+        // Elevation plane
+        plane = new THREE.Mesh(geo, elevationMaterial);
+        plane.position.z = -0.8;
+        plane.rotation.z = Math.PI;
+        scene.add(plane);
+
+        // Base plane
+        plane2 = new THREE.Mesh(geo, basicMaterial);
+        plane2.position.z = -1.6;
+        plane2.rotation.z = Math.PI;
+        scene.add(plane2);
+    }
+
+    buildPlanes(texture,1000,1000);
+
+    // GUI setup
+    // ----------------------------------------------------------------
+    const gui = createGui({ renderer, scene, camera, controls, controller1, controller2 });
+
+    // File field
+    const fileInput = document.getElementById('fileInput');
+    fileInput.addEventListener('change', e => {
+        if (e.target.files[0]) {
+            loadFile(e.target.files[0], (tex, w, h) => buildPlanes(tex, w, h));
+            fileInput.value = '';
+        }
+    });
+    gui.add({ loadFile: () => fileInput.click() }, 'loadFile').name('Load Image / Video');
+
+    // Color mode selector
+    let colorModeSelector = gui.add(PARAMS, 'colorMode', ColorMode);
+    colorModeSelector.name("Color Mode");
+    
+    // Specific variable selector
+    let variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[PARAMS.colorMode]);
+    variableSelector.name("Coordinate")
+    let updateVariable = (v) => {
+        // Update PARAMS
+        PARAMS.variableChar = v;
+        PARAMS.variableID = colorModeDefs[PARAMS.colorMode].indexOf(v);
+        console.log(v, " y ", PARAMS.variableID);
+        
+        // Update elevation shader
+        elevationMaterial.uniforms.uSelectedVariable.value = PARAMS.variableID;
+        basicMaterial.needsUpdate = true;
+    };
+    variableSelector.onChange(updateVariable);
+
+    colorModeSelector.onChange((v) => {
+        // Update variable selector
+        variableSelector.destroy();
+        PARAMS.variableChar = colorModeDefs[v][0];
+        PARAMS.variableID = 0;
+        variableSelector = gui.add(PARAMS, 'variableChar', colorModeDefs[v]);
+        variableSelector.onChange(updateVariable);
+        variableSelector.name("Coordinate");
+
+        // Update elevation shader
+        elevationMaterial.uniforms.uColorMode.value = v;
+        basicMaterial.needsUpdate = true;        
+    });
+
+
+    // Controls setup
+    // ----------------------------------------------------------------
+
+    controls = new OrbitControls( camera, renderer.domElement );
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 1;
+    controls.maxDistance = 50;
+
+    // Animation loop
+    // ----------------------------------------------------------------
+
+    window.addEventListener( 'resize', onWindowResize, false );
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize( window.innerWidth, window.innerHeight );
+    }
+
+    function animate() {
+        requestAnimationFrame( animate );
+        controls.update();
+        render();
+    }
+
+    function render() {
+        renderer.render( scene, camera );
+    }
+
+    animate();
+
+    </script>
+
+	</body>
+</html>
