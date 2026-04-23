@@ -70,18 +70,16 @@
         colorMode: ColorMode.RGB,
         scaleElevation: 0.75,
         variableChar: 'R',
-        variableID: 0
+        variableID: 0,
+        planePos: new THREE.Vector3(0,0,-0.8),
+        ambient_intensity: 0.15
     }
 
     const DIRLIGHT = {
-        x: 10,
-        y: 7,
-        z: 5,
         intensity: 1,
-        direction: new THREE.Vector3(1.0,1.0,0.0)
-    }
-
-    const AMBIENT_INTENSITY = 0.15;
+        position: new THREE.Vector3(10, 7, 5),
+    };
+    DIRLIGHT.direction = PARAMS.planePos.clone().sub(DIRLIGHT.position).normalize();
 
     // Scene initialization
     // ----------------------------------------------------------------
@@ -98,7 +96,7 @@
 
     // Light init
     var light = new THREE.DirectionalLight( 0x888888, DIRLIGHT.intensity );
-    light.position.set( DIRLIGHT.x, DIRLIGHT.y, DIRLIGHT.z );
+    light.position.copy( DIRLIGHT.position );
     scene.add( light );
 
     const helper = new THREE.DirectionalLightHelper( light, 5 );
@@ -154,8 +152,8 @@
             uScaleElevation:   { value: PARAMS.scaleElevation },
             uSelectedVariable: { value: PARAMS.variableID },
             uLightDir:         { value: DIRLIGHT.direction },
-            uId:               { value: DIRLIGHT.intensity},
-            uIa:               { value: AMBIENT_INTENSITY },
+            uId:               { value: DIRLIGHT.intensity },
+            uIa:               { value: PARAMS.ambient_intensity },
             uKd:               { value: 1.0 },
             uKa:               { value: 1.0 },
         },
@@ -254,15 +252,19 @@
         
         // Elevation plane
         plane = new THREE.Mesh(geo, elevationMaterial);
-        plane.position.z = -0.8;
+        plane.position.copy(PARAMS.planePos);
         plane.rotation.z = Math.PI;
         scene.add(plane);
 
         // Base plane
         plane2 = new THREE.Mesh(geo, basicMaterial);
-        plane2.position.z = -1.6;
+        plane2.position.copy(PARAMS.planePos);
+        plane2.position.z -= 0.8;
         plane2.rotation.z = Math.PI;
         scene.add(plane2);
+
+        // Additional light handling
+        light.target = plane;
     }
 
     buildPlanes(texture,1000,1000);
@@ -312,6 +314,39 @@
         // Update elevation shader
         elevationMaterial.uniforms.uColorMode.value = v;
         basicMaterial.needsUpdate = true;        
+    });
+
+
+    const updateLight = (v) => {
+        // Pos update
+        DIRLIGHT.direction = PARAMS.planePos.clone().sub(DIRLIGHT.position).normalize();
+        elevationMaterial.uniforms.uLightDir.value = DIRLIGHT.direction;
+        light.position.copy(DIRLIGHT.position);
+        helper.update();
+
+        // Intensity update
+        elevationMaterial.uniforms.uId.value = DIRLIGHT.intensity;
+        elevationMaterial.uniforms.uIa.value = PARAMS.ambient_intensity;
+
+        elevationMaterial.needsUpdate = true;
+    }
+    const lightFolder = gui.addFolder('Light');
+    lightFolder.add(DIRLIGHT.position, 'x', -20, 20).onChange(updateLight);
+    lightFolder.add(DIRLIGHT.position, 'y', -20, 20).onChange(updateLight);
+    lightFolder.add(DIRLIGHT.position, 'z', -20, 20).onChange(updateLight);
+
+    // Directional Light variables
+    let dIntensitySelector = lightFolder.add(DIRLIGHT, 'intensity', .0, 2.0).name('Directional Light Intensity');
+    dIntensitySelector.onChange((v) => {
+        elevationMaterial.uniforms.uId.value = v;
+        elevationMaterial.needsUpdate = true;
+    });
+    
+    // Ambient Light variables
+    let aIntensitySelector = lightFolder.add(PARAMS, 'ambient_intensity', .0, .5).name('Directional Light Intensity');
+    aIntensitySelector.onChange((v) => {
+        elevationMaterial.uniforms.uIa.value = v;
+        elevationMaterial.needsUpdate = true;
     });
 
 
